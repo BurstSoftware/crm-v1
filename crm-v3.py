@@ -6,6 +6,8 @@ from datetime import datetime, date
 import os
 from typing import Optional
 import io
+import pdfkit
+import tempfile
 
 # Set page configuration
 st.set_page_config(page_title="CRM Dashboard", layout="wide")
@@ -32,7 +34,7 @@ def load_data() -> pd.DataFrame:
         # Sample data with consistent types
         data = {
             "Customer ID": [1, 2, 3, 4, 5],
-            "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
+            "Name": ["John Doe", "Jane"RJane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
             "Email": ["john@example.com", "jane@example.com", "alice@example.com", "bob@example.com", "emma@example.com"],
             "Phone": ["555-0101", "555-0102", "555-0103", "555-0104", "555-0105"],
             "Status": ["Active", "Lead", "Inactive", "Active", "Lead"],
@@ -54,6 +56,29 @@ def save_data(df: pd.DataFrame) -> None:
         lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
     )
     df_to_save.to_csv(DATA_FILE, index=False)
+
+# Function to generate HTML content for PDF
+def generate_html_for_pdf(title: str, content: str) -> str:
+    return f"""
+    <html>
+    <head>
+        <title>{title}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            h1 {{ color: #333; }}
+            .metric {{ margin: 10px 0; }}
+            .metric label {{ font-weight: bold; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <h1>{title}</h1>
+        {content}
+    </body>
+    </html>
+    """
 
 # Initialize session state for the DataFrame
 if "df" not in st.session_state:
@@ -130,9 +155,6 @@ if uploaded_file is not None:
                 st.sidebar.success("Customers uploaded successfully!")
                 st.rerun()
 
-    except Exception as e:
-        st.sidebar.error(f"Error processing uploaded file: {str(e)}")
-
 # Dashboard Page
 if page == "Dashboard":
     st.header("Overview")
@@ -140,11 +162,14 @@ if page == "Dashboard":
     # Key Metrics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Customers", len(df))
+        total_customers = len(df)
+        st.metric("Total Customers", total_customers)
     with col2:
-        st.metric("Total Sales", f"${df['Sales'].sum():,.2f}")
+        total_sales = df['Sales'].sum()
+        st.metric("Total Sales", f"${total_sales:,.2f}")
     with col3:
-        st.metric("Active Customers", len(df[df["Status"] == "Active"]))
+        active_customers = len(df[df["Status"] == "Active"])
+        st.metric("Active Customers", active_customers)
 
     # Visualizations
     st.subheader("Customer Insights")
@@ -161,6 +186,44 @@ if page == "Dashboard":
         status_counts.columns = ["Status", "Count"]
         fig_status = px.pie(status_counts, values="Count", names="Status", title="Customer Status Distribution")
         st.plotly_chart(fig_status, use_container_width=True)
+
+    # Download Dashboard as PDF
+    st.subheader("Download Dashboard as PDF")
+    # Generate HTML content for the dashboard
+    metrics_html = f"""
+    <div class="metric"><label>Total Customers:</label> {total_customers}</div>
+    <div class="metric"><label>Total Sales:</label> ${total_sales:,.2f}</div>
+    <div class="metric"><label>Active Customers:</label> {active_customers}</div>
+    """
+    # Note: Plotly charts can't be directly rendered in PDF, so we'll describe them
+    charts_html = """
+    <h2>Customer Insights</h2>
+    <p><strong>Sales by Customer:</strong> A bar chart showing sales per customer, colored by status.</p>
+    <p><strong>Customer Status Distribution:</strong> A pie chart showing the distribution of customer statuses.</p>
+    """
+    html_content = generate_html_for_pdf("CRM Dashboard", metrics_html + charts_html)
+
+    # Convert HTML to PDF
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
+        html_file.write(html_content.encode('utf-8'))
+        html_file_path = html_file.name
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
+        pdfkit.from_file(html_file_path, pdf_file.name)
+        pdf_file_path = pdf_file.name
+
+    # Provide download button for the PDF
+    with open(pdf_file_path, "rb") as f:
+        st.download_button(
+            label="Download Dashboard as PDF",
+            data=f.read(),
+            file_name="dashboard.pdf",
+            mime="application/pdf"
+        )
+
+    # Clean up temporary files
+    os.unlink(html_file_path)
+    os.unlink(pdf_file_path)
 
 # Customer Management Page
 elif page == "Customer Management":
@@ -305,6 +368,44 @@ elif page == "Reports":
         except Exception as e:
             st.error(f"Error displaying Top Customers: {str(e)}")
             st.write("Top Customers DataFrame for debugging:", top_customers)
+
+    # Download Reports as PDF
+    st.subheader("Download Reports as PDF")
+    if df.empty:
+        st.warning("No data available to download.")
+    else:
+        # Generate HTML content for the reports
+        sales_trend_html = """
+        <h2>Sales Trend</h2>
+        <p>A line chart showing the monthly sales trend over time.</p>
+        """
+        top_customers_html = "<h2>Top 5 Customers by Sales</h2><table><tr><th>Name</th><th>Sales</th></tr>"
+        for _, row in top_customers.iterrows():
+            top_customers_html += f"<tr><td>{row['Name']}</td><td>${row['Sales']:,.2f}</td></tr>"
+        top_customers_html += "</table>"
+        html_content = generate_html_for_pdf("CRM Reports", sales_trend_html + top_customers_html)
+
+        # Convert HTML to PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
+            html_file.write(html_content.encode('utf-8'))
+            html_file_path = html_file.name
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
+            pdfkit.from_file(html_file_path, pdf_file.name)
+            pdf_file_path = pdf_file.name
+
+        # Provide download button for the PDF
+        with open(pdf_file_path, "rb") as f:
+            st.download_button(
+                label="Download Reports as PDF",
+                data=f.read(),
+                file_name="reports.pdf",
+                mime="application/pdf"
+            )
+
+        # Clean up temporary files
+        os.unlink(html_file_path)
+        os.unlink(pdf_file_path)
 
 # Footer
 st.markdown("---")
