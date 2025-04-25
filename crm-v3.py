@@ -31,7 +31,7 @@ def load_data() -> pd.DataFrame:
         df["Email"] = df["Email"].astype(str)
         df["Phone"] = df["Phone"].astype(str)
     else:
-        # Sample data with consistent types (fixed typo in "Name" list)
+        # Sample data with consistent types
         data = {
             "Customer ID": [1, 2, 3, 4, 5],
             "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
@@ -192,41 +192,46 @@ if page == "Dashboard":
 
     # Download Dashboard as PDF
     st.subheader("Download Dashboard as PDF")
-    # Generate HTML content for the dashboard
-    metrics_html = f"""
-    <div class="metric"><label>Total Customers:</label> {total_customers}</div>
-    <div class="metric"><label>Total Sales:</label> ${total_sales:,.2f}</div>
-    <div class="metric"><label>Active Customers:</label> {active_customers}</div>
-    """
-    # Note: Plotly charts can't be directly rendered in PDF, so we'll describe them
-    charts_html = """
-    <h2>Customer Insights</h2>
-    <p><strong>Sales by Customer:</strong> A bar chart showing sales per customer, colored by status.</p>
-    <p><strong>Customer Status Distribution:</strong> A pie chart showing the distribution of customer statuses.</p>
-    """
-    html_content = generate_html_for_pdf("CRM Dashboard", metrics_html + charts_html)
+    try:
+        # Generate HTML content for the dashboard
+        metrics_html = f"""
+        <div class="metric"><label>Total Customers:</label> {total_customers}</div>
+        <div class="metric"><label>Total Sales:</label> ${total_sales:,.2f}</div>
+        <div class="metric"><label>Active Customers:</label> {active_customers}</div>
+        """
+        # Note: Plotly charts can't be directly rendered in PDF, so we'll describe them
+        charts_html = """
+        <h2>Customer Insights</h2>
+        <p><strong>Sales by Customer:</strong> A bar chart showing sales per customer, colored by status.</p>
+        <p><strong>Customer Status Distribution:</strong> A pie chart showing the distribution of customer statuses.</p>
+        """
+        html_content = generate_html_for_pdf("CRM Dashboard", metrics_html + charts_html)
 
-    # Convert HTML to PDF
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
-        html_file.write(html_content.encode('utf-8'))
-        html_file_path = html_file.name
+        # Convert HTML to PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
+            html_file.write(html_content.encode('utf-8'))
+            html_file_path = html_file.name
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
-        pdfkit.from_file(html_file_path, pdf_file.name)
-        pdf_file_path = pdf_file.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
+            pdfkit.from_file(html_file_path, pdf_file.name)
+            pdf_file_path = pdf_file.name
 
-    # Provide download button for the PDF
-    with open(pdf_file_path, "rb") as f:
-        st.download_button(
-            label="Download Dashboard as PDF",
-            data=f.read(),
-            file_name="dashboard.pdf",
-            mime="application/pdf"
-        )
+        # Provide download button for the PDF
+        with open(pdf_file_path, "rb") as f:
+            st.download_button(
+                label="Download Dashboard as PDF",
+                data=f.read(),
+                file_name="dashboard.pdf",
+                mime="application/pdf"
+            )
 
-    # Clean up temporary files
-    os.unlink(html_file_path)
-    os.unlink(pdf_file_path)
+        # Clean up temporary files
+        os.unlink(html_file_path)
+        os.unlink(pdf_file_path)
+
+    except Exception as e:
+        st.error(f"Failed to generate PDF: {str(e)}")
+        st.error("Please ensure wkhtmltopdf is installed on your system. For Streamlit Cloud, add 'wkhtmltopdf' to a packages.txt file.")
 
 # Customer Management Page
 elif page == "Customer Management":
@@ -297,7 +302,7 @@ elif page == "Customer Management":
     if df.empty:
         st.warning("No customers available to edit.")
     else:
-        customer_id: int = st.selectbox("Select Customer ID", df["Customer ID"], key="edit_customer_id")
+        customer_id: int = st selectbox("Select Customer ID", df["Customer ID"], key="edit_customer_id")
         selected_customer = df[df["Customer ID"] == customer_id].iloc[0]
 
         with st.form("edit_customer_form"):
@@ -377,38 +382,43 @@ elif page == "Reports":
     if df.empty:
         st.warning("No data available to download.")
     else:
-        # Generate HTML content for the reports
-        sales_trend_html = """
-        <h2>Sales Trend</h2>
-        <p>A line chart showing the monthly sales trend over time.</p>
-        """
-        top_customers_html = "<h2>Top 5 Customers by Sales</h2><table><tr><th>Name</th><th>Sales</th></tr>"
-        for _, row in top_customers.iterrows():
-            top_customers_html += f"<tr><td>{row['Name']}</td><td>${row['Sales']:,.2f}</td></tr>"
-        top_customers_html += "</table>"
-        html_content = generate_html_for_pdf("CRM Reports", sales_trend_html + top_customers_html)
+        try:
+            # Generate HTML content for the reports
+            sales_trend_html = """
+            <h2>Sales Trend</h2>
+            <p>A line chart showing the monthly sales trend over time.</p>
+            """
+            top_customers_html = "<h2>Top 5 Customers by Sales</h2><table><tr><th>Name</th><th>Sales</th></tr>"
+            for _, row in top_customers.iterrows():
+                top_customers_html += f"<tr><td>{row['Name']}</td><td>${row['Sales']:,.2f}</td></tr>"
+            top_customers_html += "</table>"
+            html_content = generate_html_for_pdf("CRM Reports", sales_trend_html + top_customers_html)
 
-        # Convert HTML to PDF
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
-            html_file.write(html_content.encode('utf-8'))
-            html_file_path = html_file.name
+            # Convert HTML to PDF
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as html_file:
+                html_file.write(html_content.encode('utf-8'))
+                html_file_path = html_file.name
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
-            pdfkit.from_file(html_file_path, pdf_file.name)
-            pdf_file_path = pdf_file.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as pdf_file:
+                pdfkit.from_file(html_file_path, pdf_file.name)
+                pdf_file_path = pdf_file.name
 
-        # Provide download button for the PDF
-        with open(pdf_file_path, "rb") as f:
-            st.download_button(
-                label="Download Reports as PDF",
-                data=f.read(),
-                file_name="reports.pdf",
-                mime="application/pdf"
-            )
+            # Provide download button for the PDF
+            with open(pdf_file_path, "rb") as f:
+                st.download_button(
+                    label="Download Reports as PDF",
+                    data=f.read(),
+                    file_name="reports.pdf",
+                    mime="application/pdf"
+                )
 
-        # Clean up temporary files
-        os.unlink(html_file_path)
-        os.unlink(pdf_file_path)
+            # Clean up temporary files
+            os.unlink(html_file_path)
+            os.unlink(pdf_file_path)
+
+        except Exception as e:
+            st.error(f"Failed to generate PDF: {str(e)}")
+            st.error("Please ensure wkhtmltopdf is installed on your system. For Streamlit Cloud, add 'wkhtmltopdf' to a packages.txt file.")
 
 # Footer
 st.markdown("---")
