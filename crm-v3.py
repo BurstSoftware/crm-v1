@@ -19,6 +19,12 @@ DATA_FILE: str = "customers.csv"
 
 # Load data from CSV or create a new DataFrame if the file doesn't exist
 def load_data() -> pd.DataFrame:
+    """
+    Load customer data from a CSV file or create a new DataFrame with sample data if the file doesn't exist.
+    
+    Returns:
+        pd.DataFrame: DataFrame containing customer data.
+    """
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
         # Ensure consistent data types
@@ -47,6 +53,12 @@ def load_data() -> pd.DataFrame:
 
 # Save data to CSV
 def save_data(df: pd.DataFrame) -> None:
+    """
+    Save the DataFrame to a CSV file, ensuring proper datetime formatting.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to save.
+    """
     df_to_save = df.copy()
     # Ensure "Last Contacted" is in datetime format before saving
     df_to_save["Last Contacted"] = pd.to_datetime(df_to_save["Last Contacted"], errors="coerce")
@@ -158,17 +170,21 @@ if page == "Dashboard":
         # Sales by Customer
         fig_sales = px.bar(df, x="Name", y="Sales", title="Sales by Customer", color="Status")
         st.plotly_chart(fig_sales, use_container_width=True)
-        # Download chart as PNG
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            fig_sales.write_image(tmp_file.name, format="png")
-            with open(tmp_file.name, "rb") as f:
-                st.download_button(
-                    label="Download Sales by Customer Chart as PNG",
-                    data=f.read(),
-                    file_name="sales_by_customer.png",
-                    mime="image/png"
-                )
-        os.unlink(tmp_file.name)
+        # Download chart as PNG with error handling
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                fig_sales.write_image(tmp_file.name, format="png")
+                with open(tmp_file.name, "rb") as f:
+                    st.download_button(
+                        label="Download Sales by Customer Chart as PNG",
+                        data=f.read(),
+                        file_name="sales_by_customer.png",
+                        mime="image/png"
+                    )
+            os.unlink(tmp_file.name)
+        except Exception as e:
+            st.error(f"Failed to generate chart image: {str(e)}")
+            st.error("This may be due to missing system dependencies. For Streamlit Cloud, ensure 'libcairo2', 'libpango-1.0-0', 'libpangocairo-1.0-0', and 'libffi7' are added to a packages.txt file.")
 
     with col2:
         # Customer Status Distribution
@@ -176,17 +192,21 @@ if page == "Dashboard":
         status_counts.columns = ["Status", "Count"]
         fig_status = px.pie(status_counts, values="Count", names="Status", title="Customer Status Distribution")
         st.plotly_chart(fig_status, use_container_width=True)
-        # Download chart as PNG
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            fig_status.write_image(tmp_file.name, format="png")
-            with open(tmp_file.name, "rb") as f:
-                st.download_button(
-                    label="Download Status Distribution Chart as PNG",
-                    data=f.read(),
-                    file_name="status_distribution.png",
-                    mime="image/png"
-                )
-        os.unlink(tmp_file.name)
+        # Download chart as PNG with error handling
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                fig_status.write_image(tmp_file.name, format="png")
+                with open(tmp_file.name, "rb") as f:
+                    st.download_button(
+                        label="Download Status Distribution Chart as PNG",
+                        data=f.read(),
+                        file_name="status_distribution.png",
+                        mime="image/png"
+                    )
+            os.unlink(tmp_file.name)
+        except Exception as e:
+            st.error(f"Failed to generate chart image: {str(e)}")
+            st.error("This may be due to missing system dependencies. For Streamlit Cloud, ensure 'libcairo2', 'libpango-1.0-0', 'libpangocairo-1.0-0', and 'libffi7' are added to a packages.txt file.")
 
 # Customer Management Page
 elif page == "Customer Management":
@@ -322,23 +342,37 @@ elif page == "Reports":
         sales_trend = df.groupby("Month")["Sales"].sum().reset_index()
         fig_trend = px.line(sales_trend, x="Month", y="Sales", title="Monthly Sales Trend")
         st.plotly_chart(fig_trend, use_container_width=True)
-        # Download chart as PNG
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-            fig_trend.write_image(tmp_file.name, format="png")
-            with open(tmp_file.name, "rb") as f:
-                st.download_button(
-                    label="Download Sales Trend Chart as PNG",
-                    data=f.read(),
-                    file_name="sales_trend.png",
-                    mime="image/png"
-                )
-        os.unlink(tmp_file.name)
+        # Download chart as PNG with error handling
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+                fig_trend.write_image(tmp_file.name, format="png")
+                with open(tmp_file.name, "rb") as f:
+                    st.download_button(
+                        label="Download Sales Trend Chart as PNG",
+                        data=f.read(),
+                        file_name="sales_trend.png",
+                        mime="image/png"
+                    )
+            os.unlink(tmp_file.name)
+        except Exception as e:
+            st.error(f"Failed to generate chart image: {str(e)}")
+            st.error("This may be due to missing system dependencies. For Streamlit Cloud, ensure 'libcairo2', 'libpango-1.0-0', 'libpangocairo-1.0-0', and 'libffi7' are added to a packages.txt file.")
 
         # Top Customers
         st.subheader("Top 5 Customers by Sales")
         top_customers = df.nlargest(5, "Sales")[["Name", "Sales"]]
         try:
             st.dataframe(top_customers, use_container_width=True)
+            # Download table as CSV
+            csv_buffer = io.StringIO()
+            top_customers.to_csv(csv_buffer, index=False)
+            csv_str = csv_buffer.getvalue()
+            st.download_button(
+                label="Download Top 5 Customers as CSV",
+                data=csv_str,
+                file_name="top_customers.csv",
+                mime="text/csv"
+            )
         except Exception as e:
             st.error(f"Error displaying Top Customers: {str(e)}")
             st.write("Top Customers DataFrame for debugging:", top_customers)
