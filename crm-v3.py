@@ -31,10 +31,10 @@ def load_data() -> pd.DataFrame:
         df["Email"] = df["Email"].astype(str)
         df["Phone"] = df["Phone"].astype(str)
     else:
-        # Sample data with consistent types
+        # Sample data with consistent types (fixed typo in "Name" list)
         data = {
             "Customer ID": [1, 2, 3, 4, 5],
-            "Name": ["John Doe", "Jane"RJane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
+            "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
             "Email": ["john@example.com", "jane@example.com", "alice@example.com", "bob@example.com", "emma@example.com"],
             "Phone": ["555-0101", "555-0102", "555-0103", "555-0104", "555-0105"],
             "Status": ["Active", "Lead", "Inactive", "Active", "Lead"],
@@ -154,6 +154,9 @@ if uploaded_file is not None:
                 save_data(st.session_state.df)
                 st.sidebar.success("Customers uploaded successfully!")
                 st.rerun()
+
+    except Exception as e:
+        st.sidebar.error(f"Error processing uploaded file: {str(e)}")
 
 # Dashboard Page
 if page == "Dashboard":
