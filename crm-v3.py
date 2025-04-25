@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, date
 import os
+from typing import Optional
+import io
 
 # Set page configuration
 st.set_page_config(page_title="CRM Dashboard", layout="wide")
@@ -12,17 +14,24 @@ st.set_page_config(page_title="CRM Dashboard", layout="wide")
 st.title("📊 Customer Relationship Management (CRM) Dashboard")
 
 # File path for data persistence
-DATA_FILE = "customers.csv"
+DATA_FILE: str = "customers.csv"
 
 # Load data from CSV or create a new DataFrame if the file doesn't exist
-def load_data():
+def load_data() -> pd.DataFrame:
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
-        df["Last Contacted"] = pd.to_datetime(df["Last Contacted"])
+        # Ensure consistent data types
+        df["Customer ID"] = pd.to_numeric(df["Customer ID"], errors="coerce").fillna(0).astype(int)
+        df["Last Contacted"] = pd.to_datetime(df["Last Contacted"], errors="coerce")
+        df["Sales"] = pd.to_numeric(df["Sales"], errors="coerce").fillna(0).astype(int)
+        df["Status"] = df["Status"].astype(str)
+        df["Name"] = df["Name"].astype(str)
+        df["Email"] = df["Email"].astype(str)
+        df["Phone"] = df["Phone"].astype(str)
     else:
-        # Sample data if no CSV exists
+        # Sample data with consistent types (fixed mixed types in Customer ID)
         data = {
-            "Customer ID": [1, 2, 3, "4", 5],  # Mixed types to test robustness
+            "Customer ID": [1, 2, 3, 4, 5],  # All integers
             "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
             "Email": ["john@example.com", "jane@example.com", "alice@example.com", "bob@example.com", "emma@example.com"],
             "Phone": ["555-0101", "555-0102", "555-0103", "555-0104", "555-0105"],
@@ -36,19 +45,26 @@ def load_data():
     return df
 
 # Save data to CSV
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+def save_data(df: pd.DataFrame) -> None:
+    df_to_save = df.copy()
+    # Ensure "Last Contacted" is in datetime format before saving
+    df_to_save["Last Contacted"] = pd.to_datetime(df_to_save["Last Contacted"], errors="coerce")
+    # Convert datetime to string for CSV storage, handling NaT values
+    df_to_save["Last Contacted"] = df_to_save["Last Contacted"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+    )
+    df_to_save.to_csv(DATA_FILE, index=False)
 
 # Initialize session state for the DataFrame
 if "df" not in st.session_state:
     st.session_state.df = load_data()
 
 # Reference to the DataFrame in session state
-df = st.session_state.df
+df: pd.DataFrame = st.session_state.df
 
 # Sidebar for navigation
 st.sidebar.header("Navigation")
-page = st.sidebar.selectbox("Choose a page", ["Dashboard", "Customer Management", "Reports"])
+page: str = st.sidebar.selectbox("Choose a page", ["Dashboard", "Customer Management", "Reports"])
 
 # Dashboard Page
 if page == "Dashboard":
@@ -86,19 +102,30 @@ elif page == "Customer Management":
     # Filter customers
     st.subheader("Filter Customers")
     status_filter = st.multiselect("Filter by Status", options=df["Status"].unique(), default=df["Status"].unique())
-    filtered_df = df[df["Status"].isin(status_filter)]
-    st.dataframe(filtered_df, use_container_width=True)
+    filtered_df = df[df["Status"].isin(status_filter)].copy()
+
+    # Ensure filtered_df has consistent types before displaying
+    filtered_df["Customer ID"] = filtered_df["Customer ID"].astype(int)
+    filtered_df["Last Contacted"] = pd.to_datetime(filtered_df["Last Contacted"], errors="coerce")
+    filtered_df["Sales"] = filtered_df["Sales"].astype(int)
+
+    # Display the DataFrame with error handling
+    try:
+        st.dataframe(filtered_df, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error displaying DataFrame: {str(e)}")
+        st.write("DataFrame contents for debugging:", filtered_df)
 
     # Add new customer
     st.subheader("Add New Customer")
     with st.form("add_customer_form"):
-        name = st.text_input("Name")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone")
-        status = st.selectbox("Status", ["Active", "Lead", "Inactive"])
-        sales = st.number_input("Sales", min_value=0, step=100)
+        name: str = st.text_input("Name")
+        email: str = st.text_input("Email")
+        phone: str = st.text_input("Phone")
+        status: str = st.selectbox("Status", ["Active", "Lead", "Inactive"])
+        sales: int = st.number_input("Sales", min_value=0, step=100)
         last_contacted = st.date_input("Last Contacted", datetime.today())
-        submit = st.form_submit_button("Add Customer")
+        submit: bool = st.form_submit_button("Add Customer")
 
         if submit:
             # Basic validation
@@ -108,10 +135,12 @@ elif page == "Customer Management":
                 st.error("A customer with this email already exists!")
             else:
                 # Ensure Customer ID is numeric and find the maximum
-                df["Customer ID"] = pd.to_numeric(df["Customer ID"], errors="coerce")
-                max_id = df["Customer ID"].max() if not df.empty else 0
+                df["Customer ID"] = pd.to_numeric(df["Customer ID"], errors="coerce").fillna(0).astype(int)
+                max_id: float = df["Customer ID"].max() if not df.empty else 0
                 if pd.isna(max_id):
                     max_id = 0
+                # Convert last_contacted to a pandas Timestamp
+                last_contacted_ts = pd.Timestamp(last_contacted)
                 new_customer = {
                     "Customer ID": int(max_id) + 1,
                     "Name": name,
@@ -119,43 +148,140 @@ elif page == "Customer Management":
                     "Phone": phone,
                     "Status": status,
                     "Sales": sales,
-                    "Last Contacted": last_contacted
+                    "Last Contacted": last_contacted_ts
                 }
                 # Append the new customer to the DataFrame
                 new_df = pd.DataFrame([new_customer])
+                # Update the session state DataFrame
                 st.session_state.df = pd.concat([df, new_df], ignore_index=True)
-                save_data(st.session_state.df)  # Persist changes to CSV
+                # Persist changes to CSV
+                save_data(st.session_state.df)
                 st.success("Customer added successfully!")
-                st.rerun()  # Rerun to refresh the app and display updated DataFrame
+                st.rerun()
 
     # Edit customer
     st.subheader("Edit Customer")
     if df.empty:
         st.warning("No customers available to edit.")
     else:
-        customer_id = st.selectbox("Select Customer ID", df["Customer ID"])
+        customer_id: int = st.selectbox("Select Customer ID", df["Customer ID"], key="edit_customer_id")
         selected_customer = df[df["Customer ID"] == customer_id].iloc[0]
 
         with st.form("edit_customer_form"):
-            edit_name = st.text_input("Name", value=selected_customer["Name"])
-            edit_email = st.text_input("Email", value=selected_customer["Email"])
-            edit_phone = st.text_input("Phone", value=selected_customer["Phone"])
-            edit_status = st.selectbox("Status", ["Active", "Lead", "Inactive"], index=["Active", "Lead", "Inactive"].index(selected_customer["Status"]))
-            edit_sales = st.number_input("Sales", min_value=0, step=100, value=int(selected_customer["Sales"]))
-            edit_last_contacted = st.date_input("Last Contacted", value=selected_customer["Last Contacted"])
-            edit_submit = st.form_submit_button("Update Customer")
+            edit_name: str = st.text_input("Name", value=selected_customer["Name"])
+            edit_email: str = st.text_input("Email", value=selected_customer["Email"])
+            edit_phone: str = st.text_input("Phone", value=selected_customer["Phone"])
+            edit_status: str = st.selectbox("Status", ["Active", "Lead", "Inactive"], index=["Active", "Lead", "Inactive"].index(selected_customer["Status"]))
+            edit_sales: int = st.number_input("Sales", min_value=0, step=100, value=int(selected_customer["Sales"]))
+            # Ensure the default value for st.date_input is a datetime.date object
+            default_date = selected_customer["Last Contacted"].date() if pd.notna(selected_customer["Last Contacted"]) else datetime.today().date()
+            edit_last_contacted = st.date_input("Last Contacted", value=default_date)
+            edit_submit: bool = st.form_submit_button("Update Customer")
 
             if edit_submit:
                 # Validate email uniqueness (excluding the current customer)
                 if edit_email in df["Email"].values and edit_email != selected_customer["Email"]:
                     st.error("A customer with this email already exists!")
                 else:
+                    # Convert edit_last_contacted to a pandas Timestamp
+                    edit_last_contacted_ts = pd.Timestamp(edit_last_contacted)
                     st.session_state.df.loc[df["Customer ID"] == customer_id, ["Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]] = [
-                        edit_name, edit_email, edit_phone, edit_status, edit_sales, edit_last_contacted
+                        edit_name, edit_email, edit_phone, edit_status, edit_sales, edit_last_contacted_ts
                     ]
                     save_data(st.session_state.df)  # Persist changes
                     st.success("Customer updated successfully!")
                     st.rerun()
+
+    # Delete customer
+    st.subheader("Delete Customer")
+    if df.empty:
+        st.warning("No customers available to delete.")
+    else:
+        customer_id_to_delete: int = st.selectbox("Select Customer ID to Delete", df["Customer ID"], key="delete_customer_id")
+        selected_customer_to_delete = df[df["Customer ID"] == customer_id_to_delete].iloc[0]
+
+        # Display customer details for confirmation
+        st.write(f"**Name:** {selected_customer_to_delete['Name']}")
+        st.write(f"**Email:** {selected_customer_to_delete['Email']}")
+        st.write(f"**Status:** {selected_customer_to_delete['Status']}")
+
+        # Add a confirmation checkbox to prevent accidental deletion
+        confirm_delete = st.checkbox("I confirm I want to delete this customer")
+
+        if st.button("Delete Customer", disabled=not confirm_delete):
+            # Remove the customer from the DataFrame
+            st.session_state.df = df[df["Customer ID"] != customer_id_to_delete].reset_index(drop=True)
+            # Persist changes to CSV
+            save_data(st.session_state.df)
+            st.success(f"Customer {customer_id_to_delete} deleted successfully!")
+            st.rerun()
+
+    # Import/Export Customers
+    st.subheader("Import/Export Customers")
+
+    # Download current customers as CSV
+    st.write("### Download Current Customers")
+    if df.empty:
+        st.warning("No customers available to download.")
+    else:
+        # Prepare the DataFrame for download (convert datetime to string)
+        df_download = df.copy()
+        df_download["Last Contacted"] = df_download["Last Contacted"].apply(
+            lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+        )
+        # Convert DataFrame to CSV string
+        csv_buffer = io.StringIO()
+        df_download.to_csv(csv_buffer, index=False)
+        csv_str = csv_buffer.getvalue()
+        # Provide download button
+        st.download_button(
+            label="Download Customers as CSV",
+            data=csv_str,
+            file_name="customers_export.csv",
+            mime="text/csv"
+        )
+
+    # Upload new customers from CSV
+    st.write("### Upload Customers from CSV")
+    st.info("The uploaded CSV must have the following columns: Customer ID, Name, Email, Phone, Status, Sales, Last Contacted")
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    if uploaded_file is not None:
+        try:
+            # Read the uploaded CSV
+            uploaded_df = pd.read_csv(uploaded_file)
+            
+            # Validate required columns
+            required_columns = ["Customer ID", "Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]
+            if not all(col in uploaded_df.columns for col in required_columns):
+                st.error(f"Uploaded CSV must contain all required columns: {', '.join(required_columns)}")
+            else:
+                # Ensure data types match the expected format
+                uploaded_df["Customer ID"] = pd.to_numeric(uploaded_df["Customer ID"], errors="coerce").fillna(0).astype(int)
+                uploaded_df["Sales"] = pd.to_numeric(uploaded_df["Sales"], errors="coerce").fillna(0).astype(int)
+                uploaded_df["Last Contacted"] = pd.to_datetime(uploaded_df["Last Contacted"], errors="coerce")
+                uploaded_df["Status"] = uploaded_df["Status"].astype(str)
+                uploaded_df["Name"] = uploaded_df["Name"].astype(str)
+                uploaded_df["Email"] = uploaded_df["Email"].astype(str)
+                uploaded_df["Phone"] = uploaded_df["Phone"].astype(str)
+
+                # Validate data integrity
+                if uploaded_df["Customer ID"].duplicated().any():
+                    st.error("Uploaded CSV contains duplicate Customer IDs. Please ensure all Customer IDs are unique.")
+                elif uploaded_df["Customer ID"].le(0).any():
+                    st.error("Customer IDs must be positive integers.")
+                elif uploaded_df["Sales"].lt(0).any():
+                    st.error("Sales values must be non-negative.")
+                else:
+                    # Update the session state DataFrame with the uploaded data
+                    st.session_state.df = uploaded_df
+                    # Persist changes to CSV
+                    save_data(st.session_state.df)
+                    st.success("Customers uploaded successfully!")
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"Error processing uploaded file: {str(e)}")
 
 # Reports Page
 elif page == "Reports":
@@ -174,7 +300,11 @@ elif page == "Reports":
         # Top Customers
         st.subheader("Top 5 Customers by Sales")
         top_customers = df.nlargest(5, "Sales")[["Name", "Sales"]]
-        st.dataframe(top_customers, use_container_width=True)
+        try:
+            st.dataframe(top_customers, use_container_width=True)
+        except Exception as e:
+            st.error(f"Error displaying Top Customers: {str(e)}")
+            st.write("Top Customers DataFrame for debugging:", top_customers)
 
 # Footer
 st.markdown("---")
