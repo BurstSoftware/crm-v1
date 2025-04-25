@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from datetime import datetime
+from datetime import datetime, date
 import os
 from typing import Optional
 
@@ -46,8 +46,12 @@ def load_data() -> pd.DataFrame:
 # Save data to CSV
 def save_data(df: pd.DataFrame) -> None:
     df_to_save = df.copy()
-    # Convert datetime to string for CSV storage
-    df_to_save["Last Contacted"] = df_to_save["Last Contacted"].dt.strftime("%Y-%m-%d")
+    # Ensure "Last Contacted" is in datetime format before saving
+    df_to_save["Last Contacted"] = pd.to_datetime(df_to_save["Last Contacted"], errors="coerce")
+    # Convert datetime to string for CSV storage, handling NaT values
+    df_to_save["Last Contacted"] = df_to_save["Last Contacted"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+    )
     df_to_save.to_csv(DATA_FILE, index=False)
 
 # Initialize session state for the DataFrame
@@ -134,6 +138,8 @@ elif page == "Customer Management":
                 max_id: float = df["Customer ID"].max() if not df.empty else 0
                 if pd.isna(max_id):
                     max_id = 0
+                # Convert last_contacted to a pandas Timestamp
+                last_contacted_ts = pd.Timestamp(last_contacted)
                 new_customer = {
                     "Customer ID": int(max_id) + 1,
                     "Name": name,
@@ -141,7 +147,7 @@ elif page == "Customer Management":
                     "Phone": phone,
                     "Status": status,
                     "Sales": sales,
-                    "Last Contacted": last_contacted
+                    "Last Contacted": last_contacted_ts
                 }
                 # Append the new customer to the DataFrame
                 new_df = pd.DataFrame([new_customer])
@@ -166,7 +172,9 @@ elif page == "Customer Management":
             edit_phone: str = st.text_input("Phone", value=selected_customer["Phone"])
             edit_status: str = st.selectbox("Status", ["Active", "Lead", "Inactive"], index=["Active", "Lead", "Inactive"].index(selected_customer["Status"]))
             edit_sales: int = st.number_input("Sales", min_value=0, step=100, value=int(selected_customer["Sales"]))
-            edit_last_contacted = st.date_input("Last Contacted", value=selected_customer["Last Contacted"])
+            # Ensure the default value for st.date_input is a datetime.date object
+            default_date = selected_customer["Last Contacted"].date() if pd.notna(selected_customer["Last Contacted"]) else datetime.today().date()
+            edit_last_contacted = st.date_input("Last Contacted", value=default_date)
             edit_submit: bool = st.form_submit_button("Update Customer")
 
             if edit_submit:
@@ -174,8 +182,10 @@ elif page == "Customer Management":
                 if edit_email in df["Email"].values and edit_email != selected_customer["Email"]:
                     st.error("A customer with this email already exists!")
                 else:
+                    # Convert edit_last_contacted to a pandas Timestamp
+                    edit_last_contacted_ts = pd.Timestamp(edit_last_contacted)
                     st.session_state.df.loc[df["Customer ID"] == customer_id, ["Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]] = [
-                        edit_name, edit_email, edit_phone, edit_status, edit_sales, edit_last_contacted
+                        edit_name, edit_email, edit_phone, edit_status, edit_sales, edit_last_contacted_ts
                     ]
                     save_data(st.session_state.df)  # Persist changes
                     st.success("Customer updated successfully!")
