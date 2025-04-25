@@ -29,9 +29,9 @@ def load_data() -> pd.DataFrame:
         df["Email"] = df["Email"].astype(str)
         df["Phone"] = df["Phone"].astype(str)
     else:
-        # Sample data with consistent types (fixed mixed types in Customer ID)
+        # Sample data with consistent types
         data = {
-            "Customer ID": [1, 2, 3, 4, 5],  # All integers
+            "Customer ID": [1, 2, 3, 4, 5],
             "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
             "Email": ["john@example.com", "jane@example.com", "alice@example.com", "bob@example.com", "emma@example.com"],
             "Phone": ["555-0101", "555-0102", "555-0103", "555-0104", "555-0105"],
@@ -62,9 +62,76 @@ if "df" not in st.session_state:
 # Reference to the DataFrame in session state
 df: pd.DataFrame = st.session_state.df
 
-# Sidebar for navigation
+# Sidebar for navigation and import/export
 st.sidebar.header("Navigation")
 page: str = st.sidebar.selectbox("Choose a page", ["Dashboard", "Customer Management", "Reports"])
+
+# Import/Export Customers in the Sidebar
+st.sidebar.header("Import/Export Customers")
+
+# Download current customers as CSV
+st.sidebar.write("### Download Current Customers")
+if df.empty:
+    st.sidebar.warning("No customers available to download.")
+else:
+    # Prepare the DataFrame for download (convert datetime to string)
+    df_download = df.copy()
+    df_download["Last Contacted"] = df_download["Last Contacted"].apply(
+        lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
+    )
+    # Convert DataFrame to CSV string
+    csv_buffer = io.StringIO()
+    df_download.to_csv(csv_buffer, index=False)
+    csv_str = csv_buffer.getvalue()
+    # Provide download button
+    st.sidebar.download_button(
+        label="Download Customers as CSV",
+        data=csv_str,
+        file_name="customers_export.csv",
+        mime="text/csv"
+    )
+
+# Upload new customers from CSV
+st.sidebar.write("### Upload Customers from CSV")
+st.sidebar.info("The uploaded CSV must have the following columns: Customer ID, Name, Email, Phone, Status, Sales, Last Contacted")
+
+uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv", key="sidebar_file_uploader")
+if uploaded_file is not None:
+    try:
+        # Read the uploaded CSV
+        uploaded_df = pd.read_csv(uploaded_file)
+        
+        # Validate required columns
+        required_columns = ["Customer ID", "Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]
+        if not all(col in uploaded_df.columns for col in required_columns):
+            st.sidebar.error(f"Uploaded CSV must contain all required columns: {', '.join(required_columns)}")
+        else:
+            # Ensure data types match the expected format
+            uploaded_df["Customer ID"] = pd.to_numeric(uploaded_df["Customer ID"], errors="coerce").fillna(0).astype(int)
+            uploaded_df["Sales"] = pd.to_numeric(uploaded_df["Sales"], errors="coerce").fillna(0).astype(int)
+            uploaded_df["Last Contacted"] = pd.to_datetime(uploaded_df["Last Contacted"], errors="coerce")
+            uploaded_df["Status"] = uploaded_df["Status"].astype(str)
+            uploaded_df["Name"] = uploaded_df["Name"].astype(str)
+            uploaded_df["Email"] = uploaded_df["Email"].astype(str)
+            uploaded_df["Phone"] = uploaded_df["Phone"].astype(str)
+
+            # Validate data integrity
+            if uploaded_df["Customer ID"].duplicated().any():
+                st.sidebar.error("Uploaded CSV contains duplicate Customer IDs. Please ensure all Customer IDs are unique.")
+            elif uploaded_df["Customer ID"].le(0).any():
+                st.sidebar.error("Customer IDs must be positive integers.")
+            elif uploaded_df["Sales"].lt(0).any():
+                st.sidebar.error("Sales values must be non-negative.")
+            else:
+                # Update the session state DataFrame with the uploaded data
+                st.session_state.df = uploaded_df
+                # Persist changes to CSV
+                save_data(st.session_state.df)
+                st.sidebar.success("Customers uploaded successfully!")
+                st.rerun()
+
+    except Exception as e:
+        st.sidebar.error(f"Error processing uploaded file: {str(e)}")
 
 # Dashboard Page
 if page == "Dashboard":
@@ -215,73 +282,6 @@ elif page == "Customer Management":
             save_data(st.session_state.df)
             st.success(f"Customer {customer_id_to_delete} deleted successfully!")
             st.rerun()
-
-    # Import/Export Customers
-    st.subheader("Import/Export Customers")
-
-    # Download current customers as CSV
-    st.write("### Download Current Customers")
-    if df.empty:
-        st.warning("No customers available to download.")
-    else:
-        # Prepare the DataFrame for download (convert datetime to string)
-        df_download = df.copy()
-        df_download["Last Contacted"] = df_download["Last Contacted"].apply(
-            lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else ""
-        )
-        # Convert DataFrame to CSV string
-        csv_buffer = io.StringIO()
-        df_download.to_csv(csv_buffer, index=False)
-        csv_str = csv_buffer.getvalue()
-        # Provide download button
-        st.download_button(
-            label="Download Customers as CSV",
-            data=csv_str,
-            file_name="customers_export.csv",
-            mime="text/csv"
-        )
-
-    # Upload new customers from CSV
-    st.write("### Upload Customers from CSV")
-    st.info("The uploaded CSV must have the following columns: Customer ID, Name, Email, Phone, Status, Sales, Last Contacted")
-    
-    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-    if uploaded_file is not None:
-        try:
-            # Read the uploaded CSV
-            uploaded_df = pd.read_csv(uploaded_file)
-            
-            # Validate required columns
-            required_columns = ["Customer ID", "Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]
-            if not all(col in uploaded_df.columns for col in required_columns):
-                st.error(f"Uploaded CSV must contain all required columns: {', '.join(required_columns)}")
-            else:
-                # Ensure data types match the expected format
-                uploaded_df["Customer ID"] = pd.to_numeric(uploaded_df["Customer ID"], errors="coerce").fillna(0).astype(int)
-                uploaded_df["Sales"] = pd.to_numeric(uploaded_df["Sales"], errors="coerce").fillna(0).astype(int)
-                uploaded_df["Last Contacted"] = pd.to_datetime(uploaded_df["Last Contacted"], errors="coerce")
-                uploaded_df["Status"] = uploaded_df["Status"].astype(str)
-                uploaded_df["Name"] = uploaded_df["Name"].astype(str)
-                uploaded_df["Email"] = uploaded_df["Email"].astype(str)
-                uploaded_df["Phone"] = uploaded_df["Phone"].astype(str)
-
-                # Validate data integrity
-                if uploaded_df["Customer ID"].duplicated().any():
-                    st.error("Uploaded CSV contains duplicate Customer IDs. Please ensure all Customer IDs are unique.")
-                elif uploaded_df["Customer ID"].le(0).any():
-                    st.error("Customer IDs must be positive integers.")
-                elif uploaded_df["Sales"].lt(0).any():
-                    st.error("Sales values must be non-negative.")
-                else:
-                    # Update the session state DataFrame with the uploaded data
-                    st.session_state.df = uploaded_df
-                    # Persist changes to CSV
-                    save_data(st.session_state.df)
-                    st.success("Customers uploaded successfully!")
-                    st.rerun()
-
-        except Exception as e:
-            st.error(f"Error processing uploaded file: {str(e)}")
 
 # Reports Page
 elif page == "Reports":
