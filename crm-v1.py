@@ -15,7 +15,6 @@ st.title("📊 Customer Relationship Management (CRM) Dashboard")
 DATA_FILE = "customers.csv"
 
 # Load data from CSV or create a new DataFrame if the file doesn't exist
-@st.cache_data
 def load_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE)
@@ -23,7 +22,7 @@ def load_data():
     else:
         # Sample data if no CSV exists
         data = {
-            "Customer ID": [1, 2, 3, 4, 5],
+            "Customer ID": [1, 2, 3, "4", 5],  # Mixed types to test robustness
             "Name": ["John Doe", "Jane Smith", "Alice Brown", "Bob Johnson", "Emma Wilson"],
             "Email": ["john@example.com", "jane@example.com", "alice@example.com", "bob@example.com", "emma@example.com"],
             "Phone": ["555-0101", "555-0102", "555-0103", "555-0104", "555-0105"],
@@ -40,8 +39,12 @@ def load_data():
 def save_data(df):
     df.to_csv(DATA_FILE, index=False)
 
-# Load data
-df = load_data()
+# Initialize session state for the DataFrame
+if "df" not in st.session_state:
+    st.session_state.df = load_data()
+
+# Reference to the DataFrame in session state
+df = st.session_state.df
 
 # Sidebar for navigation
 st.sidebar.header("Navigation")
@@ -104,8 +107,13 @@ elif page == "Customer Management":
             elif email in df["Email"].values:
                 st.error("A customer with this email already exists!")
             else:
+                # Ensure Customer ID is numeric and find the maximum
+                df["Customer ID"] = pd.to_numeric(df["Customer ID"], errors="coerce")
+                max_id = df["Customer ID"].max() if not df.empty else 0
+                if pd.isna(max_id):
+                    max_id = 0
                 new_customer = {
-                    "Customer ID": max(df["Customer ID"]) + 1 if not df.empty else 1,
+                    "Customer ID": int(max_id) + 1,
                     "Name": name,
                     "Email": email,
                     "Phone": phone,
@@ -113,10 +121,12 @@ elif page == "Customer Management":
                     "Sales": sales,
                     "Last Contacted": last_contacted
                 }
-                df = pd.concat([df, pd.DataFrame([new_customer])], ignore_index=True)
-                save_data(df)  # Persist changes
+                # Append the new customer to the DataFrame
+                new_df = pd.DataFrame([new_customer])
+                st.session_state.df = pd.concat([df, new_df], ignore_index=True)
+                save_data(st.session_state.df)  # Persist changes to CSV
                 st.success("Customer added successfully!")
-                st.rerun()  # Updated from st.experimental_rerun()
+                st.rerun()  # Rerun to refresh the app and display updated DataFrame
 
     # Edit customer
     st.subheader("Edit Customer")
@@ -140,12 +150,12 @@ elif page == "Customer Management":
                 if edit_email in df["Email"].values and edit_email != selected_customer["Email"]:
                     st.error("A customer with this email already exists!")
                 else:
-                    df.loc[df["Customer ID"] == customer_id, ["Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]] = [
+                    st.session_state.df.loc[df["Customer ID"] == customer_id, ["Name", "Email", "Phone", "Status", "Sales", "Last Contacted"]] = [
                         edit_name, edit_email, edit_phone, edit_status, edit_sales, edit_last_contacted
                     ]
-                    save_data(df)  # Persist changes
+                    save_data(st.session_state.df)  # Persist changes
                     st.success("Customer updated successfully!")
-                    st.rerun()  # Updated from st.experimental_rerun()
+                    st.rerun()
 
 # Reports Page
 elif page == "Reports":
