@@ -302,7 +302,7 @@ elif page == "Customer Management":
     if df.empty:
         st.warning("No customers available to edit.")
     else:
-        customer_id: int = st selectbox("Select Customer ID", df["Customer ID"], key="edit_customer_id")
+        customer_id: int = st.selectbox("Select Customer ID", df["Customer ID"], key="edit_customer_id")
         selected_customer = df[df["Customer ID"] == customer_id].iloc[0]
 
         with st.form("edit_customer_form"):
